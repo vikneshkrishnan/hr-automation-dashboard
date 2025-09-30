@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/contexts/ToastContext';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
@@ -20,8 +21,8 @@ export default function RegisterPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [errors, setErrors] = useState<ValidationErrors>({});
   const [isLoading, setIsLoading] = useState(false);
-  const [successMessage, setSuccessMessage] = useState('');
   const { register, user, loading: authLoading } = useAuth();
+  const { showToast } = useToast();
   const router = useRouter();
 
   useEffect(() => {
@@ -89,7 +90,6 @@ export default function RegisterPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrors({});
-    setSuccessMessage('');
 
     if (!validateForm()) {
       return;
@@ -100,7 +100,7 @@ export default function RegisterPage() {
     const result = await register(email, password, fullName, confirmPassword);
 
     if (result.success) {
-      setSuccessMessage('Registration successful! Redirecting to login...');
+      showToast('Registration successful! Redirecting to login...', 'success');
       setTimeout(() => {
         router.push('/login');
       }, 2000);
@@ -117,6 +117,7 @@ export default function RegisterPage() {
       } else {
         setErrors({ general: errorMessage });
       }
+      showToast(errorMessage, 'error');
     }
 
     setIsLoading(false);
@@ -168,18 +169,6 @@ export default function RegisterPage() {
                 <div className="ml-3">
                   <h3 className="text-sm font-medium text-red-800">
                     {errors.general}
-                  </h3>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {successMessage && (
-            <div className="rounded-md bg-green-50 p-4">
-              <div className="flex">
-                <div className="ml-3">
-                  <h3 className="text-sm font-medium text-green-800">
-                    {successMessage}
                   </h3>
                 </div>
               </div>

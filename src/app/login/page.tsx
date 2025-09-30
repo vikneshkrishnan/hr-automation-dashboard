@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/contexts/ToastContext';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
@@ -11,6 +12,7 @@ export default function LoginPage() {
   const [errors, setErrors] = useState<{ email?: string; password?: string; general?: string }>({});
   const [isLoading, setIsLoading] = useState(false);
   const { login, user, loading: authLoading } = useAuth();
+  const { showToast } = useToast();
   const router = useRouter();
 
   useEffect(() => {
@@ -51,8 +53,12 @@ export default function LoginPage() {
 
     const result = await login(email, password);
 
-    if (!result.success) {
-      setErrors({ general: result.error || 'Login failed' });
+    if (result.success) {
+      showToast('Login successful! Welcome back.', 'success');
+    } else {
+      const errorMessage = result.error || 'Login failed';
+      setErrors({ general: errorMessage });
+      showToast(errorMessage, 'error');
     }
 
     setIsLoading(false);

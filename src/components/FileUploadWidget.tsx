@@ -1,7 +1,9 @@
 "use client";
 
 import React, { useRef, useState } from "react";
-import { saveResumeAnalysis, testSupabaseBasicConnection, testDatabaseConnection, testRLSPermissions } from "@/lib/database";
+import { saveResumeAnalysis } from "@/lib/database";
+import { useToast } from "@/contexts/ToastContext";
+import AnalysisModal from "./AnalysisModal";
 
 interface CandidateInfo {
   candidate_id: string;
@@ -54,15 +56,18 @@ export default function FileUploadWidget({ onUploadSuccess, onUploadError }: Fil
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  const { showToast } = useToast();
 
   const uploadFile = async (file: File) => {
     setIsUploading(true);
+    setShowModal(true);
 
     try {
       const formData = new FormData();
       formData.append('file', file);
 
-      const response = await fetch('http://localhost:8001/api/v1/resume/upload', {
+      const response = await fetch('http://localhost:8000/api/v1/resume/upload', {
         method: 'POST',
         body: formData,
       });
@@ -74,56 +79,45 @@ export default function FileUploadWidget({ onUploadSuccess, onUploadError }: Fil
       const data: ApiResponse = await response.json();
 
       if (data.status === 'success') {
-        // Test database connection first
-        setIsSaving(true);
-
-        // Step 1: Test basic Supabase connectivity
-        console.log('🔍 Step 1: Testing basic Supabase connectivity...');
-        const basicTest = await testSupabaseBasicConnection();
-
-        if (!basicTest.success) {
-          console.error('❌ Basic Supabase connectivity failed:', basicTest.error);
-          console.error('   This indicates a fundamental issue with URL, API key, or network connectivity');
-        } else {
-          console.log('✅ Basic Supabase connectivity working');
-
-          // Step 2: Test table-specific connection
-          console.log('🔍 Step 2: Testing table connectivity...');
-          const tableTest = await testDatabaseConnection();
-
-          if (!tableTest.success) {
-            console.error('❌ Table connectivity failed:', tableTest.error);
-            if (tableTest.tableExists === false) {
-              console.error('   The resume_analyses table does not exist. Please run the SQL schema from supabase_schema.sql');
-            }
-          } else {
-            // Step 3: Test RLS permissions
-            console.log('🔍 Step 3: Testing RLS permissions...');
-            const rlsTest = await testRLSPermissions();
-            if (!rlsTest.success) {
-              console.error('❌ RLS permissions failed:', rlsTest.error);
-              console.error('   You may need to check your RLS policies or authenticate with Supabase');
-            } else {
-              console.log('✅ All database tests passed');
-            }
-          }
-        }
-
         // Save to database
+        setIsSaving(true);
         const saveResult = await saveResumeAnalysis(data);
 
         if (saveResult.success) {
+          showToast('Resume analyzed and saved successfully!', 'success');
           onUploadSuccess(data);
         } else {
-          // Still show the results even if database save fails
+          // Check if it's a duplicate resume
+          if (saveResult.isDuplicate) {
+            // For duplicates, don't show results - just show error
+            console.warn('Duplicate resume detected:', saveResult.error);
+            showToast(saveResult.error || 'This resume has already been analyzed', 'error', 5000);
+            setShowModal(false);
+            setIsSaving(false);
+            setIsUploading(false);
+            return; // Exit early, don't call onUploadSuccess
+          }
+
+          // For other database errors, show results but warn about save failure
           console.warn('Failed to save to database:', saveResult.error);
+          showToast('Resume analyzed but not saved to database', 'info');
+
+          // Show database error details
+          if (saveResult.error) {
+            console.error('Database Error Details:', saveResult.error);
+            showToast(saveResult.error, 'error', 5000);
+          }
+
           onUploadSuccess(data);
         }
         setIsSaving(false);
+        setShowModal(false);
       } else {
+        setShowModal(false);
         onUploadError(data.message || 'Upload failed');
       }
     } catch (error) {
+      setShowModal(false);
       const errorMessage = error instanceof Error ? error.message : 'Upload failed';
       onUploadError(errorMessage);
     } finally {
@@ -152,8 +146,11 @@ export default function FileUploadWidget({ onUploadSuccess, onUploadError }: Fil
   const isProcessing = isUploading || isSaving;
 
   return (
-    <div className="flex items-center">
-      <button
+    <>
+      <AnalysisModal isOpen={showModal} />
+
+      <div className="flex items-center">
+        <button
         onClick={handleButtonClick}
         disabled={isProcessing}
         className={`inline-flex items-center px-6 py-3 font-semibold rounded-lg focus:outline-none focus:ring-4 focus:ring-blue-200 transition-all duration-200 shadow-sm hover:shadow-md whitespace-nowrap ${
@@ -190,15 +187,16 @@ export default function FileUploadWidget({ onUploadSuccess, onUploadError }: Fil
         )}
       </button>
 
-      {/* Hidden File Input */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".pdf"
-        onChange={handleFileSelect}
-        className="hidden"
-        disabled={isProcessing}
-      />
-    </div>
+        {/* Hidden File Input */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".pdf"
+          onChange={handleFileSelect}
+          className="hidden"
+          disabled={isProcessing}
+        />
+      </div>
+    </>
   );
 }

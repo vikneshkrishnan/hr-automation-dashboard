@@ -52,14 +52,15 @@ interface ResumeAnalysisRecord {
   updated_at?: string;
 }
 
-export async function saveResumeAnalysis(apiResponse: ApiResponse): Promise<{ success: boolean; error?: string; data?: ResumeAnalysisRecord }> {
+export async function saveResumeAnalysis(apiResponse: ApiResponse): Promise<{ success: boolean; error?: string; data?: ResumeAnalysisRecord; isDuplicate?: boolean }> {
   try {
     if (!supabase) {
-      console.warn('Supabase not configured, skipping database save');
-      return { success: true }; // Return success to not block the UI
+      const errorMsg = '⚠️ Supabase not configured. Database storage disabled. Please set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY environment variables.';
+      console.warn(errorMsg);
+      return { success: false, error: errorMsg };
     }
 
-    console.log('Attempting to save resume analysis for candidate:', apiResponse.candidate_info.candidate_id);
+    console.log('📝 Attempting to save resume analysis for candidate:', apiResponse.candidate_info.candidate_id);
     console.log('Data to insert:', {
       candidate_id: apiResponse.candidate_info.candidate_id,
       candidate_name: apiResponse.candidate_info.name,
@@ -83,7 +84,7 @@ export async function saveResumeAnalysis(apiResponse: ApiResponse): Promise<{ su
       const errorMessage = error.message || 'Unknown database error';
       const errorCode = error.code || 'UNKNOWN';
 
-      console.error('Supabase error details:', {
+      console.error('❌ Supabase error details:', {
         message: errorMessage,
         details: error.details || 'No details available',
         hint: error.hint || 'No hint available',
@@ -91,24 +92,32 @@ export async function saveResumeAnalysis(apiResponse: ApiResponse): Promise<{ su
         fullError: error
       });
 
-      // If error object is completely empty, it's likely a connectivity issue
+      // Provide user-friendly error messages based on error codes
+      let userFriendlyError = errorMessage;
+      let isDuplicate = false;
+
       if (!error.message && !error.code && Object.keys(error).length === 0) {
-        return {
-          success: false,
-          error: 'Database connectivity error: Cannot reach Supabase. Check URL, API key, and network connection.'
-        };
+        userFriendlyError = 'Cannot reach database. Check your internet connection and Supabase configuration.';
+      } else if (errorCode === '42P01') {
+        userFriendlyError = 'Database table not found. Please run the SQL schema setup in Supabase.';
+      } else if (errorCode === '42501' || errorMessage.includes('permission') || errorMessage.includes('policy')) {
+        userFriendlyError = 'Permission denied. Please run database/resume_analysis_schema_with_anon.sql to fix RLS policies.';
+      } else if (errorCode === '23505' || errorMessage.includes('duplicate') || errorMessage.includes('unique constraint')) {
+        userFriendlyError = `Duplicate resume detected: ${apiResponse.candidate_info.name} has already been analyzed.`;
+        isDuplicate = true;
       }
 
-      return { success: false, error: `Database error: ${errorMessage}` };
+      return { success: false, error: userFriendlyError, isDuplicate };
     }
 
-    console.log('Successfully saved resume analysis:', data?.id);
+    console.log('✅ Successfully saved resume analysis:', data?.id);
     return { success: true, data };
   } catch (error) {
-    console.error('Unexpected error saving resume analysis:', error);
+    console.error('❌ Unexpected error saving resume analysis:', error);
+    const errorMsg = error instanceof Error ? error.message : 'Unknown error occurred';
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error occurred'
+      error: `Unexpected error: ${errorMsg}`
     };
   }
 }
@@ -121,45 +130,21 @@ export async function testSupabaseBasicConnection(): Promise<{ success: boolean;
 
     console.log('🔗 Testing basic Supabase connectivity...');
 
-    // Test basic Supabase connection with a simple query that should always work
-    const { data, error } = await supabase
-      .from('_realtime')
-      .select('*')
-      .limit(1);
+    // Test using Supabase auth endpoint which is always available
+    // This doesn't require any database tables to exist
+    const { data: authData, error: authError } = await supabase.auth.getSession();
 
-    if (error) {
-      console.error('Basic connectivity test failed:', error);
-
-      // If this fails, try an even simpler test
-      console.log('🔗 Trying alternative connectivity test...');
-
-      try {
-        // Test using Supabase auth endpoint which is always available
-        const { data: authData, error: authError } = await supabase.auth.getSession();
-
-        if (authError && authError.message) {
-          return {
-            success: false,
-            error: `Supabase connectivity issue: ${authError.message}`,
-            details: authError as unknown as Record<string, unknown>
-          };
-        }
-
-        console.log('✅ Basic Supabase connectivity working (via auth)');
-        return { success: true, details: { method: 'auth', data: authData } };
-
-      } catch (authTestError) {
-        console.error('❌ All connectivity tests failed:', authTestError);
-        return {
-          success: false,
-          error: 'Cannot establish connection to Supabase',
-          details: { originalError: error as unknown as Record<string, unknown>, authError: authTestError as unknown as Record<string, unknown> }
-        };
-      }
+    if (authError && authError.message) {
+      console.error('❌ Supabase connectivity test failed:', authError);
+      return {
+        success: false,
+        error: `Supabase connectivity issue: ${authError.message}`,
+        details: authError as unknown as Record<string, unknown>
+      };
     }
 
-    console.log('✅ Basic Supabase connectivity working (via realtime)');
-    return { success: true, details: { method: 'realtime', data } };
+    console.log('✅ Basic Supabase connectivity working');
+    return { success: true, details: { method: 'auth', session: authData } };
 
   } catch (error) {
     console.error('❌ Unexpected error during connectivity test:', error);
@@ -177,12 +162,13 @@ export async function testDatabaseConnection(): Promise<{ success: boolean; erro
       return { success: false, error: 'Supabase not configured' };
     }
 
-    console.log('Testing database connection...');
+    console.log('🔍 Testing database connection...');
 
     // Test basic connection and check if table exists
-    const { error } = await supabase
+    // Use simple select with limit instead of count(*)
+    const { data, error } = await supabase
       .from('resume_analyses')
-      .select('count(*)')
+      .select('id')
       .limit(1);
 
     if (error) {
@@ -190,7 +176,7 @@ export async function testDatabaseConnection(): Promise<{ success: boolean; erro
       const errorMessage = error.message || 'Unknown database error';
       const errorCode = error.code || 'UNKNOWN';
 
-      console.error('Database connection test failed:', {
+      console.error('❌ Database connection test failed:', {
         message: errorMessage,
         details: error.details || 'No details available',
         hint: error.hint || 'No hint available',
@@ -215,10 +201,10 @@ export async function testDatabaseConnection(): Promise<{ success: boolean; erro
       return { success: false, error: errorMessage, tableExists: true };
     }
 
-    console.log('Database connection successful, table exists');
+    console.log('✅ Database connection successful, table exists');
     return { success: true, tableExists: true };
   } catch (error) {
-    console.error('Unexpected error testing database connection:', error);
+    console.error('❌ Unexpected error testing database connection:', error);
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error occurred'
