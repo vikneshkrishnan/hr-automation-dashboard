@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import Dashboard from "@/components/Dashboard";
 import ResumeAnalyzer from "@/components/ResumeAnalyzer";
+import Candidates from "@/components/Candidates";
 import ProtectedRoute from "@/components/ProtectedRoute";
 
 export default function Home() {
@@ -17,6 +18,8 @@ export default function Home() {
     switch (activePage) {
       case "dashboard":
         return <Dashboard />;
+      case "candidates":
+        return <Candidates />;
       case "resume-analyzer":
         return <ResumeAnalyzer />;
       default:
