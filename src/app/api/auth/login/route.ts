@@ -85,6 +85,7 @@ export async function POST(request: NextRequest) {
       email: user.user_email,
       fullName: user.user_full_name,
       role: user.user_role,
+      companyId: user.user_company_id,
     });
 
     return NextResponse.json(
@@ -96,6 +97,7 @@ export async function POST(request: NextRequest) {
           email: user.user_email,
           fullName: user.user_full_name,
           role: user.user_role,
+          companyId: user.user_company_id,
         },
       },
       { status: 200 }

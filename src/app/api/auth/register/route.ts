@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { email, password, fullName, confirmPassword } = body;
+    const { email, password, fullName, confirmPassword, companyId } = body;
 
     // Validation
     if (!email || !password || !fullName || !confirmPassword) {
@@ -58,12 +58,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Call Supabase function to register user
-    const { data, error } = await supabase.rpc('register_hr_user', {
-      p_email: sanitizedEmail,
-      p_password: password,
-      p_full_name: sanitizedFullName,
-    });
+    // Call appropriate Supabase function based on whether company_id is provided
+    let data, error;
+
+    if (companyId) {
+      // Register HR user with company
+      const result = await supabase.rpc('register_hr_user_with_company', {
+        p_email: sanitizedEmail,
+        p_password: password,
+        p_full_name: sanitizedFullName,
+        p_company_id: companyId,
+      });
+      data = result.data;
+      error = result.error;
+    } else {
+      // Register HR user without company (legacy support)
+      const result = await supabase.rpc('register_hr_user', {
+        p_email: sanitizedEmail,
+        p_password: password,
+        p_full_name: sanitizedFullName,
+      });
+      data = result.data;
+      error = result.error;
+    }
 
     if (error) {
       // Log detailed error for debugging

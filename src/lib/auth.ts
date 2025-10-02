@@ -8,6 +8,7 @@ export interface UserPayload {
   email: string;
   fullName: string;
   role: string;
+  companyId?: string;
 }
 
 export async function createSession(user: UserPayload) {

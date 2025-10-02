@@ -20,6 +20,7 @@ export async function GET() {
           email: session.email,
           fullName: session.fullName,
           role: session.role,
+          companyId: session.companyId,
         },
       },
       { status: 200 }

@@ -8,6 +8,7 @@ interface User {
   email: string;
   fullName: string;
   role: string;
+  companyId?: string;
 }
 
 interface AuthContextType {
@@ -63,7 +64,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (response.ok) {
         setUser(data.user);
-        router.push('/');
+        // Redirect based on company registration status
+        if (data.user.companyId) {
+          router.push('/');
+        } else {
+          router.push('/company-register');
+        }
         return { success: true };
       } else {
         return { success: false, error: data.error || 'Login failed' };
